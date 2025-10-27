@@ -3,6 +3,8 @@ import { useRef, useState, useMemo } from "react";
 export default function DocCorrectionPage() {
   // ✅ GUNAKAN DOMAIN SPACE YANG BENAR
   const API_BASE = "https://slavinskiaa-korelu-backend.hf.space";
+  console.log("API_BASE in bundle =", API_BASE);
+
 
   const [docFile, setDocFile] = useState(null);
   const [docIsLoading, setDocIsLoading] = useState(false);

@@ -5,6 +5,8 @@ export default function TextCorrectionPage() {
 
   // ✅ Pakai domain Space yang benar
   const API_BASE = "https://slavinskiaa-korelu-backend.hf.space";
+  console.log("API_BASE in bundle =", API_BASE);
+
   // (Nanti kalau mau rapi pakai ENV: export const API_BASE = import.meta.env.VITE_API_BASE)
 
   // ====== STATE ======
