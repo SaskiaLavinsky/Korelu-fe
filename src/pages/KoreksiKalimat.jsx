@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 
 export default function TextCorrectionPage() {
   const MAX_CHARS = 5000;
-  const API_BASE = "http://127.0.0.1:8000";
+  const API_BASE = "https://slavinskiaa-korelu-backend.hf.space";
 
   // ====== STATE ======
   const [inputText, setInputText] = useState("");

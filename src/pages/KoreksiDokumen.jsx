@@ -1,7 +1,7 @@
 import { useRef, useState, useMemo } from "react";
 
 export default function DocCorrectionPage() {
-  const API_BASE = "http://127.0.0.1:8000";
+  const API_BASE = "https://slavinskiaa-korelu-backend.hf.space";
 
   const [docFile, setDocFile] = useState(null);
   const [docIsLoading, setDocIsLoading] = useState(false);
