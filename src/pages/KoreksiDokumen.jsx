@@ -1,9 +1,9 @@
 import { useRef, useState, useMemo, useCallback } from "react";
 
 export default function DocCorrectionPage() {
-  // ✅ GUNAKAN DOMAIN SPACE YANG BENAR
+  // 🔧 Ganti sesuai backend-mu
   const API_BASE = "https://slavinskiaa-korelu-backend.hf.space";
-  console.log("API_BASE in bundle =", API_BASE);
+  // const API_BASE = "http://127.0.0.1:8000";
 
   const [docFile, setDocFile] = useState(null);
   const [docIsLoading, setDocIsLoading] = useState(false);
@@ -18,11 +18,11 @@ export default function DocCorrectionPage() {
   const [previewIdxSingkatan, setPreviewIdxSingkatan] = useState([]);
   const [previewIdxPolitik, setPreviewIdxPolitik] = useState([]);
   const [previewIdxTypo, setPreviewIdxTypo] = useState([]);
-  const [previewText, setPreviewText] = useState(""); // Hasil akhir plain
+  const [previewText, setPreviewText] = useState("");
 
   const fileInputRef = useRef(null);
 
-  // Box & textarea class — disamakan dengan halaman teks
+  // UI helpers
   const BOX =
     "p-4 border border-green-300 bg-green-50 rounded-lg text-gray-800 " +
     "min-h-[60px] break-words overflow-x-auto select-none ";
@@ -30,9 +30,7 @@ export default function DocCorrectionPage() {
     "w-full bg-green-50 border border-green-300 rounded-lg p-4 text-gray-800 " +
     "min-h-[60px] break-words overflow-x-auto resize-none focus:outline-none ";
 
-  const handlePickFileClick = () => {
-    fileInputRef.current?.click();
-  };
+  const handlePickFileClick = () => fileInputRef.current?.click();
 
   const resetState = () => {
     setDocFile(null);
@@ -64,22 +62,21 @@ export default function DocCorrectionPage() {
     setPreviewText("");
   };
 
-  // ===== helper: fallback hitung kandidat via /koreksi
+  // === Fallback hitung kandidat via /koreksi ===
   const runCandidateFallback = useCallback(
     async (textForCand) => {
       if (!textForCand) return false;
       try {
-        console.log("[FALLBACK] request to /koreksi with ~", textForCand.length, "chars");
         const res2 = await fetch(`${API_BASE}/koreksi`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ kalimat: textForCand.slice(0, 2000) }), // batasi supaya ringan
+          body: JSON.stringify({ kalimat: textForCand.slice(0, 2000) }),
         });
         const raw2 = await res2.text();
         let data2 = null;
-        try { data2 = raw2 ? JSON.parse(raw2) : null; } catch {}
-        console.log("[FALLBACK] /koreksi status:", res2.status, "data:", data2);
-
+        try {
+          data2 = raw2 ? JSON.parse(raw2) : null;
+        } catch {}
         if (res2.ok && data2) {
           const merged = data2.candidates || data2.symspell_candidates || {};
           setDocCandidates(merged);
@@ -113,35 +110,27 @@ export default function DocCorrectionPage() {
       fd.append("file", docFile);
 
       const start = performance.now();
-      const res = await fetch(`${API_BASE}/koreksi-doc`, {
-        method: "POST",
-        body: fd,
-      });
+      const res = await fetch(`${API_BASE}/koreksi-doc`, { method: "POST", body: fd });
       const elapsed = performance.now() - start;
 
-      // Cegah crash saat server kirim HTML error
-      const rawText = await res.text();
+      // Parser tahan HTML error
+      const raw = await res.text();
       let data = null;
       try {
-        data = rawText ? JSON.parse(rawText) : null;
+        data = raw ? JSON.parse(raw) : null;
       } catch {
-        // bukan JSON (mungkin HTML error page)
+        // server mungkin kirim HTML
       }
 
       setDocProcessTimeMs(elapsed);
 
       if (!res.ok || (data && data.error)) {
-        const msg =
-          (data && data.error) ||
-          `Server error (${res.status})` ||
-          "Terjadi kesalahan saat memproses dokumen.";
+        const msg = (data && data.error) || `Server error (${res.status})`;
         throw new Error(msg);
       }
       if (!data) throw new Error("Response kosong dari server.");
 
-      console.log("[/koreksi-doc] response:", data);
-
-      // Kandidat + info unduhan (terima banyak nama key)
+      // Kandidat + info unduhan (support 2 key)
       const initialCandidates = data.candidates || data.symspell_candidates || {};
       setDocCandidates(initialCandidates);
       setDocDownloadId(data.file_id);
@@ -167,13 +156,13 @@ export default function DocCorrectionPage() {
       setPreviewIdxTypo(Array.isArray(p.idx_typo_fix) ? p.idx_typo_fix : []);
       setPreviewText(typeof p.teks === "string" ? p.teks : "");
 
-      // 🔁 Fallback otomatis jika kandidat kosong atau tidak ada
-      const initialEmpty = !initialCandidates || Object.keys(initialCandidates).length === 0;
-      if (initialEmpty) {
-        const teksForCandidates =
+      // Fallback otomatis bila kandidat kosong
+      const noInitCand = !initialCandidates || Object.keys(initialCandidates).length === 0;
+      if (noInitCand) {
+        const t =
           (typeof p.teks === "string" && p.teks.trim()) ||
           (Array.isArray(p.tokens) ? p.tokens.join(" ") : "");
-        await runCandidateFallback(teksForCandidates);
+        await runCandidateFallback(t);
       }
     } catch (e) {
       console.error(e);
@@ -256,7 +245,6 @@ export default function DocCorrectionPage() {
     return lines.join("\n");
   }, [docCandidates]);
 
-  // Helper format waktu
   const formatProcTime = (ms) => {
     if (ms == null) return "";
     const totalSeconds = Math.floor(ms / 1000);
@@ -278,13 +266,11 @@ export default function DocCorrectionPage() {
 
       <div className="bg-white shadow-md rounded-xl p-6">
         <p className="text-xs text-gray-500 mb-2">
-          Sistem memproses maksimal 5.000 karakter pertama. Jangan tutup atau ubah halaman saat proses berlangsung
-          agar file tetap tersimpan.
+          Sistem memproses maksimal 5.000 karakter pertama. Jangan tutup atau ubah halaman saat proses berlangsung agar file tetap tersimpan.
         </p>
 
-        {/* ===== Baris 1: Pilih file -> Nama file -> Hapus ===== */}
+        {/* Baris 1 */}
         <div className="flex flex-wrap items-center gap-3 mb-2">
-          {/* input file tersembunyi */}
           <input
             ref={fileInputRef}
             type="file"
@@ -292,8 +278,6 @@ export default function DocCorrectionPage() {
             onChange={handleDocFileChange}
             className="hidden"
           />
-
-          {/* Pilih File */}
           <button
             type="button"
             onClick={handlePickFileClick}
@@ -311,7 +295,6 @@ export default function DocCorrectionPage() {
             Pilih File (.docx / .pdf)
           </button>
 
-          {/* Nama file (jika ada) */}
           {docFile && (
             <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gray-100 border border-gray-300 text-sm text-gray-700">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-500" viewBox="0 0 24 24" fill="currentColor">
@@ -321,22 +304,18 @@ export default function DocCorrectionPage() {
             </span>
           )}
 
-          {/* Hapus */}
           <button
             onClick={resetState}
             disabled={disableClear}
-            className={`${
-              disableClear ? "bg-red-300 cursor-not-allowed" : "bg-red-600 hover:bg-red-700"
-            } text-white px-6 py-2 rounded-lg transition`}
+            className={`${disableClear ? "bg-red-300 cursor-not-allowed" : "bg-red-600 hover:bg-red-700"} text-white px-6 py-2 rounded-lg transition`}
             title="Hapus pilihan file & hasil"
           >
             Hapus
           </button>
         </div>
 
-        {/* ===== Baris 2: Tombol proses + (Timer & Legend di sebelahnya) ===== */}
+        {/* Baris 2 */}
         <div className="flex flex-wrap items-center gap-3 mb-3">
-          {/* Tombol proses */}
           <button
             onClick={handleDocCorrection}
             disabled={docIsLoading || !docFile}
@@ -354,7 +333,6 @@ export default function DocCorrectionPage() {
             <span>{docIsLoading ? "Memproses…" : "Periksa Ejaan & Buat Dokumen"}</span>
           </button>
 
-          {/* Timer + Legend */}
           <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600">
             {(!docIsLoading && docProcessTimeMs !== null) && (
               <span role="status" aria-live="polite">
@@ -369,7 +347,7 @@ export default function DocCorrectionPage() {
           </div>
         </div>
 
-        {/* ===== Hasil Koreksi (token ber-highlight) ===== */}
+        {/* Hasil Koreksi */}
         <div className="mt-3">
           <h4 className="font-semibold text-gray-700 mb-2">Hasil Koreksi:</h4>
           <div className={BOX}>
@@ -382,7 +360,7 @@ export default function DocCorrectionPage() {
             )}
           </div>
 
-          {/* ===== Hasil Akhir (plain + Salin) ===== */}
+          {/* Hasil Akhir */}
           <div className="flex items-center justify-between mt-4">
             <h4 className="font-semibold text-gray-700">Hasil Akhir:</h4>
             <button
@@ -409,7 +387,7 @@ export default function DocCorrectionPage() {
           />
         </div>
 
-        {/* ===== Kandidat (JW → PLL) ===== */}
+        {/* Kandidat */}
         <div className="flex items-center justify-between mt-2">
           <h4 className="font-semibold text-gray-700">Kandidat (JW → PLL):</h4>
           <button
@@ -426,7 +404,6 @@ export default function DocCorrectionPage() {
                 ? "bg-gray-200 text-gray-400 cursor-not-allowed"
                 : "bg-blue-100 hover:bg-blue-200 text-blue-700"
             }`}
-            title="Hitung kandidat dari hasil akhir bila belum muncul"
           >
             Hitung Kandidat dari Teks
           </button>
@@ -439,18 +416,15 @@ export default function DocCorrectionPage() {
           className={`mt-2 ${TA}`}
         />
 
-        {/* ===== Unduhan ===== */}
+        {/* Unduhan */}
         <div className="mt-4 flex items-center gap-3">
           <button
             onClick={handleDownloadDocResult}
             disabled={!docDownloadId}
-            className={`${
-              !docDownloadId ? "bg-green-300 cursor-not-allowed" : "bg-green-600 hover:bg-green-700"
-            } text-white px-6 py-2 rounded-lg transition`}
+            className={`${!docDownloadId ? "bg-green-300 cursor-not-allowed" : "bg-green-600 hover:bg-green-700"} text-white px-6 py-2 rounded-lg transition`}
           >
             {docDownloadName ? `Download: ${docDownloadName}` : "Download Hasil"}
           </button>
-
           {!!docDownloadMime && (
             <span className="text-xs text-gray-500">
               ({docDownloadMime && docDownloadMime.includes("pdf") ? "PDF" : "DOCX"}) ber-highlight
