@@ -5,7 +5,6 @@ export default function DocCorrectionPage() {
   const API_BASE = "https://slavinskiaa-korelu-backend.hf.space";
   console.log("API_BASE in bundle =", API_BASE);
 
-
   const [docFile, setDocFile] = useState(null);
   const [docIsLoading, setDocIsLoading] = useState(false);
   const [docCandidates, setDocCandidates] = useState({});
@@ -112,8 +111,8 @@ export default function DocCorrectionPage() {
 
       if (!data) throw new Error("Response kosong dari server.");
 
-      // Kandidat + info unduhan
-      setDocCandidates(data.candidates || {});
+      // Kandidat + info unduhan (terima banyak nama key)
+      setDocCandidates(data.candidates || data.symspell_candidates || {});
       setDocDownloadId(data.file_id);
       setDocDownloadName(data.filename || "hasil_koreksi");
       setDocDownloadMime(data.mime || "");
@@ -136,6 +135,41 @@ export default function DocCorrectionPage() {
       );
       setPreviewIdxTypo(Array.isArray(p.idx_typo_fix) ? p.idx_typo_fix : []);
       setPreviewText(typeof p.teks === "string" ? p.teks : "");
+
+      const hasCandidates =
+        (data.candidates && Object.keys(data.candidates).length > 0) ||
+        (data.symspell_candidates && Object.keys(data.symspell_candidates).length > 0);
+
+      if (!hasCandidates) {
+        const teksForCandidates =
+          (typeof p.teks === "string" && p.teks.trim()) ||
+          (Array.isArray(p.tokens) ? p.tokens.join(" ") : "");
+        if (teksForCandidates) {
+          // Tampilkan mini-loading khusus kandidat
+          setDocIsLoading(true);
+          try {
+            const res2 = await fetch(`${API_BASE}/koreksi`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ kalimat: teksForCandidates.slice(0, 2000) }),
+            });
+            const raw2 = await res2.text();
+            let data2 = null;
+            try {
+              data2 = raw2 ? JSON.parse(raw2) : null;
+            } catch {}
+            if (res2.ok && data2) {
+              setDocCandidates(
+                data2.candidates || data2.symspell_candidates || {}
+              );
+            }
+          } catch (e) {
+            console.error("Fallback kandidat gagal:", e);
+          } finally {
+            setDocIsLoading(false);
+          }
+        }
+      }
     } catch (e) {
       console.error(e);
       alert(e?.message || "Terjadi kesalahan saat memproses dokumen.");
@@ -203,8 +237,10 @@ export default function DocCorrectionPage() {
     for (const [asal, kandidat] of Object.entries(docCandidates)) {
       if (Array.isArray(kandidat) && kandidat.length > 0) {
         const parts = kandidat.map(([term, jw, pll]) => {
-          const jwStr = jw !== null && jw !== undefined ? Number(jw).toFixed(2) : "-";
-          const pllStr = pll !== null && pll !== undefined ? Number(pll).toFixed(3) : "-";
+          const jwNum = Number(jw);
+          const pllNum = Number(pll);
+          const jwStr = Number.isFinite(jwNum) ? jwNum.toFixed(2) : "-";
+          const pllStr = Number.isFinite(pllNum) ? pllNum.toFixed(3) : "-";
           return `${term} (JW ${jwStr}, PLL ${pllStr})`;
         });
         lines.push(`${asal}: ${parts.join(", ")}`);
@@ -358,7 +394,7 @@ export default function DocCorrectionPage() {
             </button>
           </div>
 
-          <textarea
+        <textarea
             readOnly
             value={docIsLoading ? "Sedang memproses hasil akhir. Mohon tunggu..." : (previewText || "")}
             placeholder="Hasil akhir akan muncul di sini…"
