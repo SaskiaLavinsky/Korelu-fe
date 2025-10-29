@@ -1,4 +1,4 @@
-import { useRef, useState, useMemo } from "react";
+import { useRef, useState, useMemo, useCallback } from "react";
 
 export default function DocCorrectionPage() {
   // ✅ GUNAKAN DOMAIN SPACE YANG BENAR
@@ -64,6 +64,35 @@ export default function DocCorrectionPage() {
     setPreviewText("");
   };
 
+  // ===== helper: fallback hitung kandidat via /koreksi
+  const runCandidateFallback = useCallback(
+    async (textForCand) => {
+      if (!textForCand) return false;
+      try {
+        console.log("[FALLBACK] request to /koreksi with ~", textForCand.length, "chars");
+        const res2 = await fetch(`${API_BASE}/koreksi`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ kalimat: textForCand.slice(0, 2000) }), // batasi supaya ringan
+        });
+        const raw2 = await res2.text();
+        let data2 = null;
+        try { data2 = raw2 ? JSON.parse(raw2) : null; } catch {}
+        console.log("[FALLBACK] /koreksi status:", res2.status, "data:", data2);
+
+        if (res2.ok && data2) {
+          const merged = data2.candidates || data2.symspell_candidates || {};
+          setDocCandidates(merged);
+          return Object.keys(merged).length > 0;
+        }
+      } catch (e) {
+        console.error("[FALLBACK] error:", e);
+      }
+      return false;
+    },
+    [API_BASE]
+  );
+
   const handleDocCorrection = async () => {
     if (!docFile) return alert("Pilih file .docx atau .pdf terlebih dahulu.");
 
@@ -108,11 +137,13 @@ export default function DocCorrectionPage() {
           "Terjadi kesalahan saat memproses dokumen.";
         throw new Error(msg);
       }
-
       if (!data) throw new Error("Response kosong dari server.");
 
+      console.log("[/koreksi-doc] response:", data);
+
       // Kandidat + info unduhan (terima banyak nama key)
-      setDocCandidates(data.candidates || data.symspell_candidates || {});
+      const initialCandidates = data.candidates || data.symspell_candidates || {};
+      setDocCandidates(initialCandidates);
       setDocDownloadId(data.file_id);
       setDocDownloadName(data.filename || "hasil_koreksi");
       setDocDownloadMime(data.mime || "");
@@ -136,39 +167,13 @@ export default function DocCorrectionPage() {
       setPreviewIdxTypo(Array.isArray(p.idx_typo_fix) ? p.idx_typo_fix : []);
       setPreviewText(typeof p.teks === "string" ? p.teks : "");
 
-      const hasCandidates =
-        (data.candidates && Object.keys(data.candidates).length > 0) ||
-        (data.symspell_candidates && Object.keys(data.symspell_candidates).length > 0);
-
-      if (!hasCandidates) {
+      // 🔁 Fallback otomatis jika kandidat kosong atau tidak ada
+      const initialEmpty = !initialCandidates || Object.keys(initialCandidates).length === 0;
+      if (initialEmpty) {
         const teksForCandidates =
           (typeof p.teks === "string" && p.teks.trim()) ||
           (Array.isArray(p.tokens) ? p.tokens.join(" ") : "");
-        if (teksForCandidates) {
-          // Tampilkan mini-loading khusus kandidat
-          setDocIsLoading(true);
-          try {
-            const res2 = await fetch(`${API_BASE}/koreksi`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ kalimat: teksForCandidates.slice(0, 2000) }),
-            });
-            const raw2 = await res2.text();
-            let data2 = null;
-            try {
-              data2 = raw2 ? JSON.parse(raw2) : null;
-            } catch {}
-            if (res2.ok && data2) {
-              setDocCandidates(
-                data2.candidates || data2.symspell_candidates || {}
-              );
-            }
-          } catch (e) {
-            console.error("Fallback kandidat gagal:", e);
-          } finally {
-            setDocIsLoading(false);
-          }
-        }
+        await runCandidateFallback(teksForCandidates);
       }
     } catch (e) {
       console.error(e);
@@ -262,6 +267,8 @@ export default function DocCorrectionPage() {
     if (m > 0) return `${m}m ${s}s`;
     return `${s}s`;
   };
+
+  const noCandidates = !docIsLoading && Object.keys(docCandidates || {}).length === 0;
 
   return (
     <section id="doc-correction" className="scroll-mt-24 px-6 md:px-10 py-10">
@@ -394,7 +401,7 @@ export default function DocCorrectionPage() {
             </button>
           </div>
 
-        <textarea
+          <textarea
             readOnly
             value={docIsLoading ? "Sedang memproses hasil akhir. Mohon tunggu..." : (previewText || "")}
             placeholder="Hasil akhir akan muncul di sini…"
@@ -403,11 +410,32 @@ export default function DocCorrectionPage() {
         </div>
 
         {/* ===== Kandidat (JW → PLL) ===== */}
-        <h4 className="font-semibold text-gray-700 mt-6 mb-2">Kandidat (JW → PLL):</h4>
+        <div className="flex items-center justify-between mt-2">
+          <h4 className="font-semibold text-gray-700">Kandidat (JW → PLL):</h4>
+          <button
+            type="button"
+            disabled={docIsLoading || (!previewText && previewTokens.length === 0)}
+            onClick={() => {
+              const t =
+                (previewText && previewText.trim()) ||
+                (previewTokens.length ? previewTokens.join(" ") : "");
+              runCandidateFallback(t);
+            }}
+            className={`text-xs px-3 py-1 rounded ${
+              docIsLoading || (!previewText && previewTokens.length === 0)
+                ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                : "bg-blue-100 hover:bg-blue-200 text-blue-700"
+            }`}
+            title="Hitung kandidat dari hasil akhir bila belum muncul"
+          >
+            Hitung Kandidat dari Teks
+          </button>
+        </div>
+
         <textarea
           readOnly
           value={docIsLoading ? "Sedang memproses dan menghitung kandidat..." : candidatesText}
-          placeholder="Tidak ada Kandidat"
+          placeholder={noCandidates ? "Tidak ada Kandidat (klik 'Hitung Kandidat dari Teks' bila perlu)" : "Tidak ada Kandidat"}
           className={`mt-2 ${TA}`}
         />
 
