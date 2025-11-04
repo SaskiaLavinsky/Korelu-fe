@@ -14,7 +14,7 @@ export default function TextCorrectionPage() {
   const [hasilTokens, setHasilTokens] = useState([]);
   const [processTimeMs, setProcessTimeMs] = useState(null);
 
-  const [ubahIndex, setUbahIndex] = useState([]);
+  const [ubahIndex, setUbahIndex] = useState([]); // (tersedia kalau mau dipakai)
   const [idxSingkatan, setIdxSingkatan] = useState([]);
   const [idxPolitikFix, setIdxPolitikFix] = useState([]);
   const [idxTypoFix, setIdxTypoFix] = useState([]);
@@ -30,8 +30,9 @@ export default function TextCorrectionPage() {
 
   // ====== STYLES ======
   const TA_BASE =
-    "w-full bg-green-50 border border-green-300 rounded-lg p-4 text-gray-800 min-h-[60px] " +
-    "break-words overflow-x-auto resize-none focus:outline-none";
+    "w-full bg-green-50 border border-green-300 rounded-lg p-4 text-gray-800 " +
+    "min-h-[60px] max-h-[50vh] overflow-auto " +
+    "break-words resize-none focus:outline-none";
 
   // ====== HELPERS ======
   const handleCopy = () => {
@@ -98,11 +99,17 @@ export default function TextCorrectionPage() {
       if (document.hidden) {
         // Grace period 8 detik sebelum abort
         hideTimerRef.current = setTimeout(() => {
-          try { ctrlRef.current?.abort(); abortedByHideRef.current = true; } catch {}
+          try {
+            ctrlRef.current?.abort();
+            abortedByHideRef.current = true;
+          } catch {}
         }, 8000);
       } else {
         // Kembali visible
-        if (hideTimerRef.current) { clearTimeout(hideTimerRef.current); hideTimerRef.current = null; }
+        if (hideTimerRef.current) {
+          clearTimeout(hideTimerRef.current);
+          hideTimerRef.current = null;
+        }
         // Auto-retry sekali jika sebelumnya abort karena hidden
         if (abortedByHideRef.current && lastPayloadRef.current) {
           abortedByHideRef.current = false;
@@ -112,7 +119,9 @@ export default function TextCorrectionPage() {
     };
 
     const onOffline = () => {
-      try { ctrlRef.current?.abort(); } catch {}
+      try {
+        ctrlRef.current?.abort();
+      } catch {}
       setIsLoading(false);
       setErrorMsg("Koneksi terputus. Coba lagi saat online.");
     };
@@ -126,13 +135,18 @@ export default function TextCorrectionPage() {
   }, []);
 
   const clearWatchdog = () => {
-    if (watchdogRef.current) { clearTimeout(watchdogRef.current); watchdogRef.current = null; }
+    if (watchdogRef.current) {
+      clearTimeout(watchdogRef.current);
+      watchdogRef.current = null;
+    }
   };
 
   // ====== CORE REQUEST (dipanggil tombol & auto-retry) ======
   const doTextCorrection = async (payload, isRetry = false) => {
     // Batalkan request sebelumnya
-    try { ctrlRef.current?.abort(); } catch {}
+    try {
+      ctrlRef.current?.abort();
+    } catch {}
     const ctrl = new AbortController();
     ctrlRef.current = ctrl;
 
@@ -144,7 +158,9 @@ export default function TextCorrectionPage() {
     // Watchdog 60 dtk
     clearWatchdog();
     watchdogRef.current = setTimeout(() => {
-      try { ctrlRef.current?.abort(); } catch {}
+      try {
+        ctrlRef.current?.abort();
+      } catch {}
       setIsLoading(false);
       setErrorMsg("Koneksi lambat/terputus. Silakan coba lagi.");
     }, 60000);
@@ -163,16 +179,24 @@ export default function TextCorrectionPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ kalimat: payload }),
           signal: ctrl.signal,
+          cache: "no-store",  // hindari cache yang bikin stuck
+          keepalive: true,    // bantu koneksi saat tab berubah
         }),
         timeout,
       ]);
 
       const raw = await res.text();
       let data = null;
-      try { data = raw ? JSON.parse(raw) : null; } catch {}
+      try {
+        data = raw ? JSON.parse(raw) : null;
+      } catch {
+        // bukan JSON (mungkin HTML dari proxy/server)
+      }
 
       if (!res.ok || !data) {
-        const msg = (data && data.error) || `Gagal menghubungi server (HTTP ${res.status}).`;
+        const msg =
+          (data && data.error) ||
+          `Gagal menghubungi server (HTTP ${res.status}).`;
         throw new Error(msg);
       }
 
@@ -192,7 +216,10 @@ export default function TextCorrectionPage() {
         console.error(e);
         setHasilTeks("");
         setHasilTokens([]);
-        setUbahIndex([]); setIdxSingkatan([]); setIdxPolitikFix([]); setIdxTypoFix([]);
+        setUbahIndex([]);
+        setIdxSingkatan([]);
+        setIdxPolitikFix([]);
+        setIdxTypoFix([]);
         setSymspellCandidates({});
         setErrorMsg(e?.message || "Terjadi kesalahan saat menghubungi server.");
       }
@@ -208,12 +235,48 @@ export default function TextCorrectionPage() {
   const handleTextCorrection = async () => {
     const text = (inputText || "").trim();
     if (!text) return;
+    window.scrollTo({ top: 0, behavior: "smooth" }); // biar user lihat overlay/toast di HP
     const payload = text.slice(0, MAX_CHARS);
     await doTextCorrection(payload);
   };
 
   return (
     <>
+      {/* TOAST ERROR (fixed di atas) */}
+      {errorMsg && (
+        <div
+          className="fixed top-3 left-1/2 -translate-x-1/2 z-50
+                     max-w-[90vw] rounded-md border border-red-200 bg-red-50 px-3 py-2
+                     text-xs text-red-700 shadow"
+        >
+          {errorMsg}
+        </div>
+      )}
+
+      {/* OVERLAY LOADING GLOBAL */}
+      {isLoading && (
+        <div
+          className="fixed inset-0 z-50 grid place-items-center bg-black/20 backdrop-blur-sm"
+          role="alert"
+          aria-live="assertive"
+        >
+          <div className="rounded-xl bg-white shadow p-4 flex items-center gap-3">
+            <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+              <circle
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+                className="opacity-25"
+              />
+              <path d="M4 12a8 8 0 018-8" fill="currentColor" className="opacity-75" />
+            </svg>
+            <span className="text-sm text-gray-800">Memproses koreksi…</span>
+          </div>
+        </div>
+      )}
+
       {/* ====== TEXT CORRECTION ====== */}
       <section id="text-correction" className="scroll-mt-24 px-6 md:px-10 py-10">
         <div className="flex justify-between items-center mb-6">
@@ -292,7 +355,7 @@ export default function TextCorrectionPage() {
             </div>
           </div>
 
-          {/* Pesan error */}
+          {/* Pesan error (inline) */}
           {errorMsg && (
             <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
               {errorMsg}
