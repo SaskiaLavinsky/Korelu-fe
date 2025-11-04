@@ -3,39 +3,45 @@ import { useState, useMemo, useRef } from "react";
 export default function TextCorrectionPage() {
   const MAX_CHARS = 5000;
 
-  // ✅ Pakai domain Space yang benar
   const API_BASE = "https://slavinskiaa-korelu-backend.hf.space";
-  console.log("API_BASE in bundle =", API_BASE);
-
-  // (Nanti kalau mau rapi pakai ENV: export const API_BASE = import.meta.env.VITE_API_BASE)
 
   // ====== STATE ======
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-
   const [hasilTeks, setHasilTeks] = useState("");
   const [hasilTokens, setHasilTokens] = useState([]);
   const [processTimeMs, setProcessTimeMs] = useState(null);
-
   const [ubahIndex, setUbahIndex] = useState([]);
   const [idxSingkatan, setIdxSingkatan] = useState([]);
   const [idxPolitikFix, setIdxPolitikFix] = useState([]);
   const [idxTypoFix, setIdxTypoFix] = useState([]);
-
   const [symspellCandidates, setSymspellCandidates] = useState({});
-
-  // Simpan controller agar request lama bisa dibatalkan jika user klik lagi
   const ctrlRef = useRef(null);
 
   // ====== STYLES ======
   const TA_BASE =
-    "w-full bg-green-50 border border-green-300 rounded-lg p-4 text-gray-800 min-h-[60px] " +
-    "break-words overflow-x-auto resize-none focus:outline-none";
+    "w-full bg-green-50 border border-green-300 rounded-lg p-4 text-gray-800 min-h-[60px] break-words overflow-visible resize-none focus:outline-none whitespace-pre-wrap";
 
   // ====== HELPERS ======
   const handleCopy = () => {
     if (!hasilTeks) return;
     navigator.clipboard.writeText(hasilTeks);
+  };
+
+  const handleCopyCandidates = () => {
+    if (!symspellCandidates || Object.keys(symspellCandidates).length === 0) return;
+    const text = Object.entries(symspellCandidates)
+      .map(([asal, kandidat]) =>
+        `${asal}: ${
+          Array.isArray(kandidat)
+            ? kandidat
+                .map(([term, jw, pll]) => `${term} (JW ${jw.toFixed(2)}, PLL ${pll.toFixed(3)})`)
+                .join(", ")
+            : "(tidak ada kandidat)"
+        }`
+      )
+      .join("\n");
+    navigator.clipboard.writeText(text);
   };
 
   const renderTokensWithHighlight = (tokens, biru, pink, kuning) => {
@@ -60,8 +66,9 @@ export default function TextCorrectionPage() {
     });
   };
 
-  // Susun teks kandidat untuk textarea
+  // ====== KANDIDAT TEXT ======
   const candidatesText = useMemo(() => {
+    if (isLoading) return "";
     if (!symspellCandidates || Object.keys(symspellCandidates).length === 0) {
       return "";
     }
@@ -79,7 +86,7 @@ export default function TextCorrectionPage() {
       }
     }
     return lines.join("\n");
-  }, [symspellCandidates]);
+  }, [symspellCandidates, isLoading]);
 
   const formatProcTime = (ms) => {
     if (ms == null) return "";
@@ -92,26 +99,32 @@ export default function TextCorrectionPage() {
     return `${s}s`;
   };
 
-  // ====== ACTION: Koreksi Kalimat ======
+  // ====== ACTION ======
   const handleTextCorrection = async () => {
     const text = (inputText || "").trim();
     if (!text) return;
-
-    // Batasi 5000 chars di sisi klien juga
     const payload = text.slice(0, MAX_CHARS);
 
-    // Batalkan request sebelumnya bila masih jalan
     if (ctrlRef.current) {
-      try { ctrlRef.current.abort(); } catch {}
+      try {
+        ctrlRef.current.abort();
+      } catch {}
     }
     const ctrl = new AbortController();
     ctrlRef.current = ctrl;
 
+    // reset semua hasil sebelum proses
+    setHasilTeks("");
+    setHasilTokens([]);
+    setUbahIndex([]);
+    setIdxSingkatan([]);
+    setIdxPolitikFix([]);
+    setIdxTypoFix([]);
+    setSymspellCandidates({});
     setIsLoading(true);
     setProcessTimeMs(null);
 
     const start = performance.now();
-
     try {
       const res = await fetch(`${API_BASE}/koreksi`, {
         method: "POST",
@@ -120,14 +133,11 @@ export default function TextCorrectionPage() {
         signal: ctrl.signal,
       });
 
-      // Baca sebagai text dulu untuk menangani HTML/teks error
       const raw = await res.text();
       let data = null;
       try {
         data = raw ? JSON.parse(raw) : null;
-      } catch {
-        // bukan JSON (mungkin HTML dari proxy/server)
-      }
+      } catch {}
 
       if (!res.ok || !data) {
         const msg =
@@ -144,7 +154,7 @@ export default function TextCorrectionPage() {
       setIdxTypoFix(Array.isArray(data.idx_typo_fix) ? data.idx_typo_fix : []);
       setSymspellCandidates(data.symspell_candidates || {});
     } catch (e) {
-      if (e.name === "AbortError") return; // diabaikan: request dibatalkan
+      if (e.name === "AbortError") return;
       console.error(e);
       setHasilTeks("Terjadi kesalahan saat menghubungi server.");
       setHasilTokens([]);
@@ -160,9 +170,9 @@ export default function TextCorrectionPage() {
     }
   };
 
+  // ====== RENDER ======
   return (
     <>
-      {/* ====== TEXT CORRECTION ====== */}
       <section id="text-correction" className="scroll-mt-24 px-6 md:px-10 py-10">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-gray-800">📝 Koreksi Kalimat</h2>
@@ -225,22 +235,15 @@ export default function TextCorrectionPage() {
               )}
             </button>
 
-            {/* Waktu proses */}
             {!isLoading && processTimeMs !== null && (
               <span className="text-sm text-gray-600" aria-live="polite">
                 ⏱️ Waktu proses:{" "}
                 <span className="font-semibold">{formatProcTime(processTimeMs)}</span>
               </span>
             )}
-
-            <div className="text-xs text-gray-600 flex flex-wrap gap-2">
-              <span className="px-2 py-0.5 rounded bg-blue-100">Singkatan</span>
-              <span className="px-2 py-0.5 rounded bg-pink-100">Perbaikan Kamus Politik</span>
-              <span className="px-2 py-0.5 rounded bg-yellow-100">Perbaikan Typo umum</span>
-            </div>
           </div>
 
-          {/* 1) HASIL KOREKSI (div supaya highlight tampil) */}
+          {/* Hasil Koreksi */}
           <div className="mt-3">
             <h4 className="font-semibold text-gray-700 mb-2">Hasil Koreksi:</h4>
             <div className={`${TA_BASE} select-none`}>
@@ -253,7 +256,7 @@ export default function TextCorrectionPage() {
               )}
             </div>
 
-            {/* 2) HASIL AKHIR (textarea asli) */}
+            {/* Hasil Akhir */}
             <div className="flex items-center justify-between mt-4">
               <h4 className="font-semibold text-gray-700">Hasil Akhir:</h4>
               <button
@@ -266,35 +269,43 @@ export default function TextCorrectionPage() {
                 }`}
                 title="Salin Teks"
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                >
-                  <path d="M16 1H4c-1.1 0-2 .9-2 2v12h2V3h12V1z" />
-                  <path d="M20 5H8c-1.1 0-2 .9-2 2v14h14c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h12v14z" />
-                </svg>
-                <span className="hidden sm:inline">Salin</span>
+                Salin
               </button>
             </div>
 
-            <textarea
-              readOnly
-              value={isLoading ? "Sedang memproses hasil akhir. Mohon tunggu..." : (hasilTeks || "")}
-              placeholder="Hasil akhir akan muncul di sini…"
-              className={`${TA_BASE} mt-2`}
-            />
+            <div className={`${TA_BASE} mt-2`}>
+              {isLoading
+                ? "Sedang memproses hasil akhir. Mohon tunggu..."
+                : hasilTeks
+                ? hasilTeks
+                : "Hasil akhir akan muncul di sini…"}
+            </div>
           </div>
 
-          {/* 3) KANDIDAT (JW → PLL) */}
-          <h4 className="font-semibold text-gray-700 mt-6 mb-2">Kandidat (JW → PLL):</h4>
-          <textarea
-            readOnly
-            value={candidatesText}
-            placeholder={isLoading ? "Sedang memuat kandidat…" : "Tidak ada Kandidat"}
-            className={TA_BASE}
-          />
+          {/* Kandidat */}
+          <div className="flex items-center justify-between mt-6 mb-2">
+            <h4 className="font-semibold text-gray-700">Kandidat (JW → PLL):</h4>
+            <button
+              onClick={handleCopyCandidates}
+              disabled={!candidatesText || isLoading}
+              className={`text-sm px-2 py-1 rounded transition ${
+                candidatesText && !isLoading
+                  ? "text-gray-600 hover:text-blue-600"
+                  : "text-gray-400 cursor-not-allowed"
+              }`}
+              title="Salin Kandidat"
+            >
+              Salin
+            </button>
+          </div>
+
+          <div className={`${TA_BASE}`}>
+            {isLoading
+              ? "Sedang memuat kandidat…"
+              : candidatesText
+              ? candidatesText
+              : "Tidak ada Kandidat"}
+          </div>
         </div>
       </section>
     </>
