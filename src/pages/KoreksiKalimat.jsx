@@ -1,17 +1,17 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 
 export default function TextCorrectionPage() {
   const MAX_CHARS = 5000;
 
-  // ✅ Pakai domain Space yang benar
-  const API_BASE = "https://slavinskiaa-korelu-backend.hf.space";
+  // Pakai ENV kalau sudah diset di Vercel; fallback ke hardcode-mu
+  const API_BASE =
+    import.meta?.env?.VITE_API_BASE || "https://slavinskiaa-korelu-backend.hf.space";
   console.log("API_BASE in bundle =", API_BASE);
-
-  // (Nanti kalau mau rapi pakai ENV: export const API_BASE = import.meta.env.VITE_API_BASE)
 
   // ====== STATE ======
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
 
   const [hasilTeks, setHasilTeks] = useState("");
   const [hasilTokens, setHasilTokens] = useState([]);
@@ -24,8 +24,9 @@ export default function TextCorrectionPage() {
 
   const [symspellCandidates, setSymspellCandidates] = useState({});
 
-  // Simpan controller agar request lama bisa dibatalkan jika user klik lagi
+  // Controller request aktif + watchdog timeout id
   const ctrlRef = useRef(null);
+  const watchdogRef = useRef(null);
 
   // ====== STYLES ======
   const TA_BASE =
@@ -92,35 +93,90 @@ export default function TextCorrectionPage() {
     return `${s}s`;
   };
 
+  // ====== LIFECYCLE PROTEKSI (HP) ======
+  useEffect(() => {
+    // Abort saat tab disembunyikan (HP lock/pindah app) biar gak ngegantung
+    const onVisibility = () => {
+      if (document.hidden) {
+        try { ctrlRef.current?.abort(); } catch {}
+      }
+    };
+
+    // Abort & beri pesan jika offline
+    const onOffline = () => {
+      try { ctrlRef.current?.abort(); } catch {}
+      setErrorMsg("Koneksi Internet terputus. Coba lagi saat online.");
+      setIsLoading(false);
+    };
+
+    const onOnline = () => {
+      // bersihkan pesan kalau sudah online lagi (opsional)
+      // setErrorMsg("");
+    };
+
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("offline", onOffline);
+    window.addEventListener("online", onOnline);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("offline", onOffline);
+      window.removeEventListener("online", onOnline);
+    };
+  }, []);
+
+  const clearWatchdog = () => {
+    if (watchdogRef.current) {
+      clearTimeout(watchdogRef.current);
+      watchdogRef.current = null;
+    }
+  };
+
   // ====== ACTION: Koreksi Kalimat ======
   const handleTextCorrection = async () => {
     const text = (inputText || "").trim();
     if (!text) return;
 
-    // Batasi 5000 chars di sisi klien juga
     const payload = text.slice(0, MAX_CHARS);
 
     // Batalkan request sebelumnya bila masih jalan
-    if (ctrlRef.current) {
-      try { ctrlRef.current.abort(); } catch {}
-    }
+    try { ctrlRef.current?.abort(); } catch {}
     const ctrl = new AbortController();
     ctrlRef.current = ctrl;
 
     setIsLoading(true);
+    setErrorMsg("");
     setProcessTimeMs(null);
+
+    // Watchdog: paksa berhenti kalau lebih dari 60 detik (jaringan HP sering freeze)
+    clearWatchdog();
+    watchdogRef.current = setTimeout(() => {
+      try { ctrlRef.current?.abort(); } catch {}
+      setIsLoading(false);
+      setErrorMsg("Koneksi lambat/terputus. Silakan coba lagi.");
+    }, 60000);
 
     const start = performance.now();
 
     try {
-      const res = await fetch(`${API_BASE}/koreksi`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kalimat: payload }),
-        signal: ctrl.signal,
-      });
+      // Tambah proteksi timeout di sisi fetch juga (race)
+      const timeout = new Promise((_, rej) =>
+        setTimeout(() => rej(new Error("Timeout")), 60000)
+      );
 
-      // Baca sebagai text dulu untuk menangani HTML/teks error
+      const res = await Promise.race([
+        fetch(`${API_BASE}/koreksi`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ kalimat: payload }),
+          signal: ctrl.signal,
+        }),
+        timeout,
+      ]);
+
+      // Kalau Promise.race dimenangkan oleh timeout, di atas sudah throw Error("Timeout")
+
+      // Baca sebagai text dulu supaya kalau server balas HTML/error tetap tertangani
       const raw = await res.text();
       let data = null;
       try {
@@ -136,6 +192,7 @@ export default function TextCorrectionPage() {
         throw new Error(msg);
       }
 
+      // === sukses ===
       setHasilTeks(data.teks || "");
       setHasilTokens(Array.isArray(data.tokens) ? data.tokens : []);
       setUbahIndex(Array.isArray(data.ubah_index) ? data.ubah_index : []);
@@ -143,17 +200,21 @@ export default function TextCorrectionPage() {
       setIdxPolitikFix(Array.isArray(data.idx_politik_fix) ? data.idx_politik_fix : []);
       setIdxTypoFix(Array.isArray(data.idx_typo_fix) ? data.idx_typo_fix : []);
       setSymspellCandidates(data.symspell_candidates || {});
+      setErrorMsg("");
     } catch (e) {
-      if (e.name === "AbortError") return; // diabaikan: request dibatalkan
-      console.error(e);
-      setHasilTeks("Terjadi kesalahan saat menghubungi server.");
-      setHasilTokens([]);
-      setUbahIndex([]);
-      setIdxSingkatan([]);
-      setIdxPolitikFix([]);
-      setIdxTypoFix([]);
-      setSymspellCandidates({});
+      if (e.name !== "AbortError") {
+        console.error(e);
+        setHasilTeks("");
+        setHasilTokens([]);
+        setUbahIndex([]);
+        setIdxSingkatan([]);
+        setIdxPolitikFix([]);
+        setIdxTypoFix([]);
+        setSymspellCandidates({});
+        setErrorMsg(e?.message || "Terjadi kesalahan saat menghubungi server.");
+      }
     } finally {
+      clearWatchdog();
       setProcessTimeMs(performance.now() - start);
       setIsLoading(false);
       ctrlRef.current = null;
@@ -239,6 +300,13 @@ export default function TextCorrectionPage() {
               <span className="px-2 py-0.5 rounded bg-yellow-100">Perbaikan Typo umum</span>
             </div>
           </div>
+
+          {/* Pesan error kalau ada */}
+          {errorMsg && (
+            <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              {errorMsg}
+            </div>
+          )}
 
           {/* 1) HASIL KOREKSI (div supaya highlight tampil) */}
           <div className="mt-3">
