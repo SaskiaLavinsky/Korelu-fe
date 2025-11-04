@@ -2,11 +2,8 @@ import { useState, useMemo, useRef, useEffect } from "react";
 
 export default function TextCorrectionPage() {
   const MAX_CHARS = 5000;
-
-  // Pakai ENV kalau sudah diset di Vercel; fallback ke hardcode-mu
   const API_BASE =
     import.meta?.env?.VITE_API_BASE || "https://slavinskiaa-korelu-backend.hf.space";
-  console.log("API_BASE in bundle =", API_BASE);
 
   // ====== STATE ======
   const [inputText, setInputText] = useState("");
@@ -24,9 +21,12 @@ export default function TextCorrectionPage() {
 
   const [symspellCandidates, setSymspellCandidates] = useState({});
 
-  // Controller request aktif + watchdog timeout id
+  // ====== REFS ======
   const ctrlRef = useRef(null);
   const watchdogRef = useRef(null);
+  const hideTimerRef = useRef(null);       // delay abort saat tab hidden
+  const lastPayloadRef = useRef(null);     // simpan payload terakhir (auto-retry)
+  const abortedByHideRef = useRef(false);  // flag abort karena hidden
 
   // ====== STYLES ======
   const TA_BASE =
@@ -61,7 +61,6 @@ export default function TextCorrectionPage() {
     });
   };
 
-  // Susun teks kandidat untuk textarea
   const candidatesText = useMemo(() => {
     if (!symspellCandidates || Object.keys(symspellCandidates).length === 0) {
       return "";
@@ -93,53 +92,46 @@ export default function TextCorrectionPage() {
     return `${s}s`;
   };
 
-  // ====== LIFECYCLE PROTEKSI (HP) ======
+  // ====== LIFECYCLE: tab hidden/visible & offline ======
   useEffect(() => {
-    // Abort saat tab disembunyikan (HP lock/pindah app) biar gak ngegantung
     const onVisibility = () => {
       if (document.hidden) {
-        try { ctrlRef.current?.abort(); } catch {}
+        // Grace period 8 detik sebelum abort
+        hideTimerRef.current = setTimeout(() => {
+          try { ctrlRef.current?.abort(); abortedByHideRef.current = true; } catch {}
+        }, 8000);
+      } else {
+        // Kembali visible
+        if (hideTimerRef.current) { clearTimeout(hideTimerRef.current); hideTimerRef.current = null; }
+        // Auto-retry sekali jika sebelumnya abort karena hidden
+        if (abortedByHideRef.current && lastPayloadRef.current) {
+          abortedByHideRef.current = false;
+          void doTextCorrection(lastPayloadRef.current, /*isRetry*/ true);
+        }
       }
     };
 
-    // Abort & beri pesan jika offline
     const onOffline = () => {
       try { ctrlRef.current?.abort(); } catch {}
-      setErrorMsg("Koneksi Internet terputus. Coba lagi saat online.");
       setIsLoading(false);
-    };
-
-    const onOnline = () => {
-      // bersihkan pesan kalau sudah online lagi (opsional)
-      // setErrorMsg("");
+      setErrorMsg("Koneksi terputus. Coba lagi saat online.");
     };
 
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("offline", onOffline);
-    window.addEventListener("online", onOnline);
-
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("offline", onOffline);
-      window.removeEventListener("online", onOnline);
     };
   }, []);
 
   const clearWatchdog = () => {
-    if (watchdogRef.current) {
-      clearTimeout(watchdogRef.current);
-      watchdogRef.current = null;
-    }
+    if (watchdogRef.current) { clearTimeout(watchdogRef.current); watchdogRef.current = null; }
   };
 
-  // ====== ACTION: Koreksi Kalimat ======
-  const handleTextCorrection = async () => {
-    const text = (inputText || "").trim();
-    if (!text) return;
-
-    const payload = text.slice(0, MAX_CHARS);
-
-    // Batalkan request sebelumnya bila masih jalan
+  // ====== CORE REQUEST (dipanggil tombol & auto-retry) ======
+  const doTextCorrection = async (payload, isRetry = false) => {
+    // Batalkan request sebelumnya
     try { ctrlRef.current?.abort(); } catch {}
     const ctrl = new AbortController();
     ctrlRef.current = ctrl;
@@ -147,8 +139,9 @@ export default function TextCorrectionPage() {
     setIsLoading(true);
     setErrorMsg("");
     setProcessTimeMs(null);
+    lastPayloadRef.current = payload;
 
-    // Watchdog: paksa berhenti kalau lebih dari 60 detik (jaringan HP sering freeze)
+    // Watchdog 60 dtk
     clearWatchdog();
     watchdogRef.current = setTimeout(() => {
       try { ctrlRef.current?.abort(); } catch {}
@@ -159,7 +152,7 @@ export default function TextCorrectionPage() {
     const start = performance.now();
 
     try {
-      // Tambah proteksi timeout di sisi fetch juga (race)
+      // Timeout sisi fetch juga
       const timeout = new Promise((_, rej) =>
         setTimeout(() => rej(new Error("Timeout")), 60000)
       );
@@ -174,25 +167,16 @@ export default function TextCorrectionPage() {
         timeout,
       ]);
 
-      // Kalau Promise.race dimenangkan oleh timeout, di atas sudah throw Error("Timeout")
-
-      // Baca sebagai text dulu supaya kalau server balas HTML/error tetap tertangani
       const raw = await res.text();
       let data = null;
-      try {
-        data = raw ? JSON.parse(raw) : null;
-      } catch {
-        // bukan JSON (mungkin HTML dari proxy/server)
-      }
+      try { data = raw ? JSON.parse(raw) : null; } catch {}
 
       if (!res.ok || !data) {
-        const msg =
-          (data && data.error) ||
-          `Gagal menghubungi server (HTTP ${res.status}).`;
+        const msg = (data && data.error) || `Gagal menghubungi server (HTTP ${res.status}).`;
         throw new Error(msg);
       }
 
-      // === sukses ===
+      // sukses
       setHasilTeks(data.teks || "");
       setHasilTokens(Array.isArray(data.tokens) ? data.tokens : []);
       setUbahIndex(Array.isArray(data.ubah_index) ? data.ubah_index : []);
@@ -202,14 +186,13 @@ export default function TextCorrectionPage() {
       setSymspellCandidates(data.symspell_candidates || {});
       setErrorMsg("");
     } catch (e) {
-      if (e.name !== "AbortError") {
+      if (e.name === "AbortError" && abortedByHideRef.current) {
+        // dibatalkan karena hidden -> biarkan auto-retry yang handle
+      } else if (e.name !== "AbortError") {
         console.error(e);
         setHasilTeks("");
         setHasilTokens([]);
-        setUbahIndex([]);
-        setIdxSingkatan([]);
-        setIdxPolitikFix([]);
-        setIdxTypoFix([]);
+        setUbahIndex([]); setIdxSingkatan([]); setIdxPolitikFix([]); setIdxTypoFix([]);
         setSymspellCandidates({});
         setErrorMsg(e?.message || "Terjadi kesalahan saat menghubungi server.");
       }
@@ -219,6 +202,14 @@ export default function TextCorrectionPage() {
       setIsLoading(false);
       ctrlRef.current = null;
     }
+  };
+
+  // ====== Handler tombol ======
+  const handleTextCorrection = async () => {
+    const text = (inputText || "").trim();
+    if (!text) return;
+    const payload = text.slice(0, MAX_CHARS);
+    await doTextCorrection(payload);
   };
 
   return (
@@ -301,7 +292,7 @@ export default function TextCorrectionPage() {
             </div>
           </div>
 
-          {/* Pesan error kalau ada */}
+          {/* Pesan error */}
           {errorMsg && (
             <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
               {errorMsg}
