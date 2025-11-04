@@ -25,10 +25,12 @@ export default function DocCorrectionPage() {
   // UI helpers
   const BOX =
     "p-4 border border-green-300 bg-green-50 rounded-lg text-gray-800 " +
-    "min-h-[60px] break-words overflow-x-auto select-none ";
-  const TA =
-    "w-full bg-green-50 border border-green-300 rounded-lg p-4 text-gray-800 " +
-    "min-h-[60px] break-words overflow-x-auto resize-none focus:outline-none ";
+    "min-h-[60px] break-words overflow-x-auto select-none";
+
+  // Versi BOX tanpa ikon, untuk container tombol kecil
+  const smallBtn =
+    "text-sm px-2 py-1 rounded transition " +
+    "text-gray-600 hover:text-blue-600 disabled:text-gray-400 disabled:cursor-not-allowed";
 
   const handlePickFileClick = () => fileInputRef.current?.click();
 
@@ -102,7 +104,7 @@ export default function DocCorrectionPage() {
       }
       if (!data) throw new Error("Response kosong dari server.");
 
-      // === Kandidat: baca SELALU dari symspell_candidates (sesuai permintaanmu)
+      // Kandidat
       setDocCandidates(data.symspell_candidates || {});
 
       // Info unduhan
@@ -187,6 +189,11 @@ export default function DocCorrectionPage() {
   const handleCopyFinal = () => {
     if (!previewText || docIsLoading) return;
     navigator.clipboard.writeText(previewText);
+  };
+
+  const handleCopyCandidates = () => {
+    if (!candidatesText || docIsLoading) return;
+    navigator.clipboard.writeText(candidatesText);
   };
 
   const candidatesText = useMemo(() => {
@@ -328,35 +335,48 @@ export default function DocCorrectionPage() {
             <button
               onClick={handleCopyFinal}
               disabled={!previewText || docIsLoading}
-              className={`flex items-center gap-2 text-sm px-2 py-1 rounded transition ${
-                previewText && !docIsLoading ? "text-gray-600 hover:text-blue-600" : "text-gray-400 cursor-not-allowed"
-              }`}
+              className={smallBtn}
               title="Salin Teks"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M16 1H4c-1.1 0-2 .9-2 2v12h2V3h12V1z" />
-                <path d="M20 5H8c-1.1 0-2 .9-2 2v14h14c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h12v14z" />
-              </svg>
-              <span className="hidden sm:inline">Salin</span>
+              Salin
             </button>
           </div>
 
-          <textarea
-            readOnly
-            value={docIsLoading ? "Sedang memproses hasil akhir. Mohon tunggu..." : (previewText || "")}
-            placeholder="Hasil akhir akan muncul di sini…"
-            className={`mt-2 ${TA}`}
-          />
+          {/* Bukan textarea → tidak ada scrollbar, tampil penuh */}
+          <div
+            className={BOX + " mt-2"}
+            style={{ whiteSpace: "pre-wrap" }}
+          >
+            {docIsLoading
+              ? "Sedang memproses hasil akhir. Mohon tunggu..."
+              : (previewText || "")}
+          </div>
         </div>
 
         {/* Kandidat */}
-        <h4 className="font-semibold text-gray-700 mt-6 mb-2">Kandidat (JW → PLL):</h4>
-        <textarea
-          readOnly
-          value={docIsLoading ? "Sedang memproses dan menghitung kandidat..." : candidatesText}
-          placeholder="Tidak ada Kandidat"
-          className={`mt-2 ${TA}`}
-        />
+        <div className="mt-6">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="font-semibold text-gray-700">Kandidat (JW → PLL):</h4>
+            <button
+              onClick={handleCopyCandidates}
+              disabled={!candidatesText || docIsLoading}
+              className={smallBtn}
+              title="Salin Kandidat"
+            >
+              Salin
+            </button>
+          </div>
+
+          {/* Bukan textarea → tidak ada scrollbar, tampil penuh */}
+          <div
+            className={BOX}
+            style={{ whiteSpace: "pre-wrap" }}
+          >
+            {docIsLoading
+              ? "Sedang memproses dan menghitung kandidat..."
+              : (candidatesText || "Tidak ada Kandidat")}
+          </div>
+        </div>
 
         {/* Unduhan */}
         <div className="mt-4 flex items-center gap-3">
