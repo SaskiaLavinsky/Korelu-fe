@@ -14,11 +14,10 @@ export default function TextCorrectionPage() {
   const [hasilTokens, setHasilTokens] = useState([]);
   const [processTimeMs, setProcessTimeMs] = useState(null);
 
-  const [ubahIndex, setUbahIndex] = useState([]); // (tersedia kalau mau dipakai)
+  const [ubahIndex, setUbahIndex] = useState([]); // opsional
   const [idxSingkatan, setIdxSingkatan] = useState([]);
   const [idxPolitikFix, setIdxPolitikFix] = useState([]);
   const [idxTypoFix, setIdxTypoFix] = useState([]);
-
   const [symspellCandidates, setSymspellCandidates] = useState({});
 
   // ====== REFS ======
@@ -93,6 +92,18 @@ export default function TextCorrectionPage() {
     return `${s}s`;
   };
 
+  // ====== Health ping (bangunin backend) ======
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetch(`${API_BASE}/`, {
+      signal: ctrl.signal,
+      cache: "no-store",
+      keepalive: true,
+      mode: "cors",
+    }).catch(() => {});
+    return () => ctrl.abort();
+  }, [API_BASE]);
+
   // ====== LIFECYCLE: tab hidden/visible & offline ======
   useEffect(() => {
     const onVisibility = () => {
@@ -141,6 +152,26 @@ export default function TextCorrectionPage() {
     }
   };
 
+  // ====== Retry kecil untuk jaringan/502/503/504 ======
+  async function fetchWithRetry(makeRequest, tries = 1, baseDelay = 1200) {
+    let lastErr;
+    for (let i = 0; i <= tries; i++) {
+      try {
+        const res = await makeRequest();
+        if ([502, 503, 504].includes(res.status)) {
+          throw new Error(`Upstream ${res.status}`);
+        }
+        return res;
+      } catch (e) {
+        lastErr = e;
+        if (i === tries) break;
+        const ms = baseDelay * (i + 1); // 1.2s, 2.4s
+        await new Promise((r) => setTimeout(r, ms));
+      }
+    }
+    throw lastErr;
+  }
+
   // ====== CORE REQUEST (dipanggil tombol & auto-retry) ======
   const doTextCorrection = async (payload, isRetry = false) => {
     // Batalkan request sebelumnya
@@ -174,14 +205,23 @@ export default function TextCorrectionPage() {
       );
 
       const res = await Promise.race([
-        fetch(`${API_BASE}/koreksi`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ kalimat: payload }),
-          signal: ctrl.signal,
-          cache: "no-store",  // hindari cache yang bikin stuck
-          keepalive: true,    // bantu koneksi saat tab berubah
-        }),
+        fetchWithRetry(
+          () =>
+            fetch(`${API_BASE}/koreksi`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Accept: "application/json",
+              },
+              body: JSON.stringify({ kalimat: payload }),
+              signal: ctrl.signal,
+              cache: "no-store",
+              keepalive: true,
+              mode: "cors",
+            }),
+          1, // retry 1x (boleh dinaikkan jadi 2 kalau perlu)
+          1200
+        ),
         timeout,
       ]);
 
@@ -190,7 +230,7 @@ export default function TextCorrectionPage() {
       try {
         data = raw ? JSON.parse(raw) : null;
       } catch {
-        // bukan JSON (mungkin HTML dari proxy/server)
+        // bukan JSON (mungkin HTML error/proxy)
       }
 
       if (!res.ok || !data) {
