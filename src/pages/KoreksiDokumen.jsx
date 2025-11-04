@@ -346,10 +346,15 @@ export default function DocCorrectionPage() {
           <div
             className={BOX + " mt-2"}
             style={{ whiteSpace: "pre-wrap" }}
+            aria-live="polite"
           >
-            {docIsLoading
-              ? "Sedang memproses hasil akhir. Mohon tunggu..."
-              : (previewText || "")}
+            {docIsLoading ? (
+              "Sedang memproses hasil akhir. Mohon tunggu..."
+            ) : previewText ? (
+              previewText
+            ) : (
+              <span className="text-gray-500">Hasil akhir akan muncul di sini…</span>
+            )}
           </div>
         </div>
 
