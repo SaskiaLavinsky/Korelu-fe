@@ -14,11 +14,14 @@ export default function TextCorrectionPage() {
   const [hasilTokens, setHasilTokens] = useState([]);
   const [processTimeMs, setProcessTimeMs] = useState(null);
 
-  const [ubahIndex, setUbahIndex] = useState([]); // opsional
+  const [ubahIndex, setUbahIndex] = useState([]); // opsional dipakai jika perlu
   const [idxSingkatan, setIdxSingkatan] = useState([]);
   const [idxPolitikFix, setIdxPolitikFix] = useState([]);
   const [idxTypoFix, setIdxTypoFix] = useState([]);
   const [symspellCandidates, setSymspellCandidates] = useState({});
+
+  // 👉 paksa re-render saat hasil datang
+  const [renderTick, setRenderTick] = useState(0);
 
   // ====== REFS ======
   const ctrlRef = useRef(null);
@@ -249,6 +252,7 @@ export default function TextCorrectionPage() {
       setIdxTypoFix(Array.isArray(data.idx_typo_fix) ? data.idx_typo_fix : []);
       setSymspellCandidates(data.symspell_candidates || {});
       setErrorMsg("");
+      setRenderTick((t) => t + 1); // 👉 paksa re-render kontainer hasil
     } catch (e) {
       if (e.name === "AbortError" && abortedByHideRef.current) {
         // dibatalkan karena hidden -> biarkan auto-retry yang handle
@@ -405,11 +409,14 @@ export default function TextCorrectionPage() {
           {/* 1) HASIL KOREKSI (div supaya highlight tampil) */}
           <div className="mt-3">
             <h4 className="font-semibold text-gray-700 mb-2">Hasil Koreksi:</h4>
-            <div className={`${TA_BASE} select-none`}>
+            <div key={renderTick} className={`${TA_BASE} select-none`}>
               {isLoading ? (
                 <p className="text-gray-500">Sedang memproses koreksi. Mohon tunggu...</p>
               ) : hasilTokens.length ? (
                 renderTokensWithHighlight(hasilTokens, idxSingkatan, idxPolitikFix, idxTypoFix)
+              ) : hasilTeks ? (
+                // Fallback: kalau tokens kosong, tetap tampilkan hasil teks
+                <span className="text-gray-800">{hasilTeks}</span>
               ) : (
                 <span className="text-gray-500">Belum ada hasil...</span>
               )}
