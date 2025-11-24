@@ -311,11 +311,13 @@ export default function DocCorrectionPage() {
                 ⏱️ Waktu proses: <span className="font-semibold">{formatProcTime(docProcessTimeMs)}</span>
               </span>
             )}
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 rounded bg-blue-100">Singkatan</span>
-              <span className="px-2 py-0.5 rounded bg-pink-100">Perbaikan Kamus Politik</span>
-              <span className="px-2 py-0.5 rounded bg-yellow-100">Perbaikan Typo umum</span>
-            </div>
+            {(!docIsLoading && docProcessTimeMs !== null) && (
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded bg-blue-100">Singkatan</span>
+                <span className="px-2 py-0.5 rounded bg-pink-100">Perbaikan Kamus Politik</span>
+                <span className="px-2 py-0.5 rounded bg-yellow-100">Perbaikan Typo umum</span>
+              </div>
+            )}
           </div>
         </div>
 
