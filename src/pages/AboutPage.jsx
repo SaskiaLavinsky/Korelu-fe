@@ -222,7 +222,7 @@ export default function AboutPage() {
             <div className="w-full flex justify-center mt-6">
                 <button
                     onClick={handleClick}
-                    className="bg-cyan-600 text-white px-6 py-3 rounded-lg text-lg shadow-md hover:bg-cyan-700 transition"
+                    className="w-full max-w-sm bg-cyan-600 text-white px-6 py-3 rounded-lg text-lg shadow-md hover:bg-cyan-700 transition"
                 >
                     Mulai Koreksi Teks
                 </button>
