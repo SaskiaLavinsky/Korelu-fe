@@ -218,7 +218,7 @@ export default function AboutPage() {
                 </ul>
                 </div>
             </div>
-
+            </div>
             <div className="w-full flex justify-center mt-6">
                 <button
                     onClick={handleClick}
@@ -226,7 +226,6 @@ export default function AboutPage() {
                 >
                     Mulai Koreksi Teks
                 </button>
-            </div>
             </div>
         </section>
     </>
