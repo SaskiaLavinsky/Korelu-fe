@@ -5,7 +5,7 @@ export default function TextCorrectionPage() {
 
   const API_BASE = "https://slavinskiaa-korelu-backend.hf.space";
 
-  // ====== STATE ======
+  // menyimpan data sementara
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [hasilTeks, setHasilTeks] = useState("");
@@ -18,11 +18,11 @@ export default function TextCorrectionPage() {
   const [symspellCandidates, setSymspellCandidates] = useState({});
   const ctrlRef = useRef(null);
 
-  // ====== STYLES ======
+  // ui kotak
   const TA_BASE =
     "w-full bg-green-50 border border-green-300 rounded-lg p-4 text-gray-800 min-h-[60px] break-words overflow-visible resize-none focus:outline-none whitespace-pre-wrap";
 
-  // ====== HELPERS ======
+  // help
   const handleCopy = () => {
     if (!hasilTeks) return;
     navigator.clipboard.writeText(hasilTeks);
@@ -44,6 +44,7 @@ export default function TextCorrectionPage() {
     navigator.clipboard.writeText(text);
   };
 
+  //menampilkan teks hasil koreksi dengan warna highlight
   const renderTokensWithHighlight = (tokens, biru, pink, kuning) => {
     const B = new Set(biru || []);
     const P = new Set(pink || []);
@@ -66,7 +67,7 @@ export default function TextCorrectionPage() {
     });
   };
 
-  // ====== KANDIDAT TEXT ======
+  //nampilin daftar kandidat koreksi
   const candidatesText = useMemo(() => {
     if (isLoading) return "";
     if (!symspellCandidates || Object.keys(symspellCandidates).length === 0) {
@@ -88,6 +89,7 @@ export default function TextCorrectionPage() {
     return lines.join("\n");
   }, [symspellCandidates, isLoading]);
 
+  //nampilin waktu proses sistem
   const formatProcTime = (ms) => {
     if (ms == null) return "";
     const totalSeconds = Math.floor(ms / 1000);
@@ -99,7 +101,7 @@ export default function TextCorrectionPage() {
     return `${s}s`;
   };
 
-  // ====== ACTION ======
+  // ngirim input ke backend, nerima hasil koreksi, dan nampilkan hasilnya di halaman
   const handleTextCorrection = async () => {
     const text = (inputText || "").trim();
     if (!text) return;

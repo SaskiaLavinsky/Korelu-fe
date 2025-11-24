@@ -107,13 +107,6 @@ export default function AboutPage() {
                         </tbody>
                         </table>
                     </div>
-
-                    <button
-                        onClick={handleClick}
-                        className="bg-cyan-600 text-white px-4 py-2 rounded"
-                        >
-                        Mulai Koreksi Teks
-                    </button>
                 </div>
             </div>
 
@@ -225,6 +218,13 @@ export default function AboutPage() {
                 </ul>
                 </div>
             </div>
+
+            <button
+                        onClick={handleClick}
+                        className="bg-cyan-600 text-white px-4 py-2 rounded"
+                        >
+                        Mulai Koreksi Teks
+                    </button>
             </div>
         </section>
     </>

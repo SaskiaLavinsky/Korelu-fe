@@ -1,10 +1,10 @@
 import { useRef, useState, useMemo } from "react";
 
 export default function DocCorrectionPage() {
-  // 🔧 Ganti sesuai backend-mu (HF Space / localhost)
   const API_BASE = "https://slavinskiaa-korelu-backend.hf.space";
   // const API_BASE = "http://127.0.0.1:8000";
 
+  //untuk menyimpan semua data sementara
   const [docFile, setDocFile] = useState(null);
   const [docIsLoading, setDocIsLoading] = useState(false);
   const [docCandidates, setDocCandidates] = useState({});
@@ -34,6 +34,7 @@ export default function DocCorrectionPage() {
 
   const handlePickFileClick = () => fileInputRef.current?.click();
 
+  //buat hapus semua data
   const resetState = () => {
     setDocFile(null);
     setDocCandidates({});
@@ -49,6 +50,7 @@ export default function DocCorrectionPage() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  //simpan file baru waktu user upload
   const handleDocFileChange = (e) => {
     const f = e.target.files?.[0] || null;
     setDocFile(f);
@@ -64,6 +66,7 @@ export default function DocCorrectionPage() {
     setPreviewText("");
   };
 
+  //untuk memulai proses kirim file ke backend agar dikoreksi
   const handleDocCorrection = async () => {
     if (!docFile) return alert("Pilih file .docx atau .pdf terlebih dahulu.");
 
