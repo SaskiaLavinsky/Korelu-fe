@@ -243,7 +243,7 @@ export default function TextCorrectionPage() {
                 <span className="font-semibold">{formatProcTime(processTimeMs)}</span>
               </span>
             )}
-            {(!docIsLoading && docProcessTimeMs !== null) && (
+            {(!isLoading && processTimeMs !== null) && (
               <div className="flex items-center gap-2">
                 <span className="px-2 py-0.5 rounded bg-blue-100">Singkatan</span>
                 <span className="px-2 py-0.5 rounded bg-pink-100">Perbaikan Kamus Politik</span>
